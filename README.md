@@ -22,6 +22,16 @@ Portals activate when your flight path crosses the opening, including at high sp
 
 Known validation limitation: on this Windows/Intel Iris Xe setup with Godot 4.7.2, closing the rendered preview logs two OpenGL texture cleanup warnings (about 2.7 MiB total). All four scenes render, and portal/flight checks pass; the cleanup warning remains unresolved. Physical-controller testing is still manual.
 
+## Camera views and navigation map
+
+Open **Settings** with Escape, the controller Menu/Start button, or the on-screen button. Choose **First person - cockpit HUD** or **Third person - chase camera**. The view choice saves automatically in `user://settings.cfg` and is restored at startup. Controller users can focus the view selector and select an option with the D-pad and A button. Controls and key remapping remain in the same scrollable settings menu.
+
+First person places you inside the ship with canopy rails, instrument ticks, a speed readout, and the center aiming reticle. Third person shows the ship with animated banking and forward-thrust exhaust; the camera follows from behind with a short smoothing delay. Both views control the same ship and use its actual position for portal crossings. The chase camera being near a portal does not activate it.
+
+Destinations are spaced substantially farther apart: the first is about 97 m ahead of spawn, with surrounding orbital shells spaced by 65 m in depth. The return portal is about 63 m behind spawn. Flight speeds and controls are unchanged.
+
+The bottom-right minimap includes **every folder portal in the current dimension**, including the gold return portal. It rotates with the ship; up means forward, right means the ship's right, and below center means behind you. Vertical stalks show relative altitude. Range automatically expands to fit all portals. Map numbers match destination labels; the aimed-at portal is highlighted, and the nearest portal's name and distance appear below the map. Files, planets, and decorative asteroids are excluded from the portal map.
+
 ## Default controls
 
 | Action | Controller | Keyboard |
@@ -35,12 +45,12 @@ Known validation limitation: on this Windows/Intel Iris Xe setup with Godot 4.7.
 | Open aimed-at item | Y | Enter |
 | Parent folder | View/Back | Backspace |
 | Reset position and orientation | Right stick click | Home |
-| Controls menu | Click the on-screen button | Esc |
+| Settings / camera view / controls | Menu/Start or on-screen button | Esc |
 | Toggle mouse look | — | F2 |
 
-Movement is relative to the camera, including after rolling. Thrust accelerates the player; momentum persists until braking. Translation and look have a stick deadzone. The first connected controller is used for analog flight.
+Movement is relative to the ship, including after rolling. Thrust accelerates the player; momentum persists until braking. Translation and look have a stick deadzone. The first connected controller is used for analog flight.
 
-The controls menu can replace each action's keyboard key and controller button. Bindings persist in Godot's user data directory (`controls.cfg`). Analog stick and trigger assignments are fixed in this first prototype. Avoid assigning the same key/button to multiple actions; duplicate assignments currently activate both. Escape and F2 are reserved.
+The controls menu can replace each action's keyboard key and controller button. Bindings persist in Godot's user data directory (`controls.cfg`). Analog stick and trigger assignments are fixed in this first prototype. Avoid assigning the same key/button to multiple actions; duplicate assignments currently activate both. Escape, F2, and the controller Menu/Start button are reserved.
 
 ## Testing progression
 
@@ -51,6 +61,9 @@ The controls menu can replace each action's keyboard key and controller button. 
 
 ## Manual acceptance checks
 
+- Switch between first-person cockpit and third-person chase views in Settings, then restart and confirm the chosen view persists.
+- In third person, thrust and strafe: the ship should move, bank, and show exhaust under forward thrust. Check portal crossings in both views.
+- Confirm all folder portals, including the return portal behind you, appear on the minimap. Turn and roll to check that the radar follows your ship orientation.
 - Left stick translates without rotating; right stick rotates without translating.
 - Each trigger rolls in the expected direction. Thrust follows the current facing direction after a roll.
 - Release thrust: motion persists. Hold brake: speed reaches zero.
@@ -66,6 +79,6 @@ The controls menu can replace each action's keyboard key and controller button. 
 
 Engine validation: `godot --headless --path . --editor --import`, then `godot --headless --path . --quit-after 120`.
 
-Portal/flight regression checks: `godot --headless --path . --script tests/portal_test.gd`. Tests create fixtures only under Godot's user data directory. Headless checks do not validate visual quality; inspect the rendered app as well.
+Portal, camera, and minimap regression checks: `godot --headless --path . --script tests/portal_test.gd`. Tests create fixtures only under Godot's user data directory. Headless checks do not validate visual quality; inspect the rendered app as well.
 
 On this Windows checkout, run: `powershell -ExecutionPolicy Bypass -File .\run.ps1`. Add `-Editor` to edit the project. The launcher uses the locally extracted Godot under ignored `build/tools`, or Godot on PATH.
