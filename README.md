@@ -8,7 +8,19 @@ A controller-first spatial desktop experiment, with an Ubuntu-based desktop sess
 2. Import `project.godot` in Godot and press F6 with `main.tscn` open, or F5 to run the project.
 3. Connect an Xbox-style controller over USB. Keyboard controls work without a controller.
 
-The prototype opens your Documents directory. Folders are blue boxes; files are purple. Aim the center crosshair at an object to highlight it, then open it. Files open using the host operating system's default application. It shows at most 120 non-hidden entries per folder. File changes, application launchers, and live application windows in 3D are not implemented.
+The prototype opens your Documents directory. Folders are animated portals; files are floating crystals spread across orbital shells. Fly through a folder portal to enter its contents, or aim at it and press Y/Enter. Aim at a file and press Y/Enter to open it. Files open using the host operating system's default application. It shows at most 120 non-hidden entries per folder, plus a gold return portal behind the spawn point when a parent exists. File changes, application launchers, and live application windows in 3D are not implemented.
+
+## Folder dimensions and scenery
+
+Every folder has a stable universe seed. Going deeper changes the scene between the Crab Nebula, a stylized black hole with an accretion disk, a spiral galaxy, and the Lagoon Nebula. Sibling folders vary their sky orientation, star distribution, portal colors, planet surfaces, and asteroid placement. Returning to a folder restores the same scenery.
+
+Stars surround the camera in every direction. Ringed planets and asteroid belts are decorative 3D scenery; they have no collision or file actions. The backgrounds are artistic compositions, not scale-accurate astronomical simulations. Crab and Lagoon imagery comes from Hubble; full attribution, source links, and license terms are in [assets/space/CREDITS.md](assets/space/CREDITS.md), with image credits also shown on screen.
+
+The expensive nebula backdrop is baked into a sky cubemap once per folder, while stars stay sharp and portals animate in real time. The Compatibility renderer remains enabled for integrated GPUs. Destination labels stay readable at a fixed screen size within 220 world units; aim at distant objects to see their full path in the HUD.
+
+Portals activate when your flight path crosses the opening, including at high speed. Folder travel fades out/in and stops momentum so you can orient yourself in the new dimension. The gold return portal and Backspace/View both go to the parent folder.
+
+Known validation limitation: on this Windows/Intel Iris Xe setup with Godot 4.7.2, closing the rendered preview logs two OpenGL texture cleanup warnings (about 2.7 MiB total). All four scenes render, and portal/flight checks pass; the cleanup warning remains unresolved. Physical-controller testing is still manual.
 
 ## Default controls
 
@@ -43,11 +55,17 @@ The controls menu can replace each action's keyboard key and controller button. 
 - Each trigger rolls in the expected direction. Thrust follows the current facing direction after a roll.
 - Release thrust: motion persists. Hold brake: speed reaches zero.
 - Reset restores the initial viewpoint and stops motion.
-- Open a folder, return to its parent, and open a harmless text/image file in its associated host application.
+- Fly through a folder portal and confirm its contents and backdrop change. Try crossing from both sides and missing the opening.
+- Turn around and cross the gold return portal; confirm the original scenery returns.
+- Aim at a portal and press Y/Enter to enter without flying. Backspace/View returns to its parent.
+- Open a harmless text/image file in its associated host application.
+- Look behind, above, and below you: stars should remain visible in all directions.
 - Open controls while moving: flight stops. Remap a key and a button, close and restart the app, and confirm they persist.
 - Toggle mouse look, then use Escape to release the pointer and open controls.
 - Disconnect/reconnect the controller; keyboard navigation continues to work.
 
 Engine validation: `godot --headless --path . --editor --import`, then `godot --headless --path . --quit-after 120`.
+
+Portal/flight regression checks: `godot --headless --path . --script tests/portal_test.gd`. Tests create fixtures only under Godot's user data directory. Headless checks do not validate visual quality; inspect the rendered app as well.
 
 On this Windows checkout, run: `powershell -ExecutionPolicy Bypass -File .\run.ps1`. Add `-Editor` to edit the project. The launcher uses the locally extracted Godot under ignored `build/tools`, or Godot on PATH.

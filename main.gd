@@ -1,5 +1,7 @@
 extends Node3D
 
+const Universe = preload("res://universe.gd")
+
 const BINDINGS_PATH = "user://controls.cfg"
 const ACTIONS = {
 	"left": [KEY_A, JOY_BUTTON_DPAD_LEFT],
@@ -24,16 +26,20 @@ var current_path := OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS)
 var selected := -1
 var hud: Label
 var message: Label
+var image_credit: Label
 var settings: PanelContainer
 var binding_buttons: Dictionary = {}
 var pending_action := ""
 var status := ""
+var universe: Node3D
+var transition: ColorRect
+var travelling := false
 
 
 func _ready() -> void:
 	_setup_inputs()
 	camera = Camera3D.new()
-	camera.far = 1000.0
+	camera.far = 2400.0
 	add_child(camera)
 	objects = Node3D.new()
 	add_child(objects)
@@ -41,12 +47,8 @@ func _ready() -> void:
 	light.rotation_degrees = Vector3(-35, -25, 0)
 	light.light_energy = 1.8
 	add_child(light)
-	var environment := WorldEnvironment.new()
-	environment.environment = Environment.new()
-	environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.environment.ambient_light_color = Color(0.5, 0.65, 0.9)
-	environment.environment.ambient_light_energy = 0.8
-	add_child(environment)
+	universe = Universe.new()
+	add_child(universe)
 	_build_ui()
 	_load_directory(current_path)
 
@@ -74,11 +76,17 @@ func _build_ui() -> void:
 	var crosshair := Label.new()
 	crosshair.text = "+"
 	crosshair.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	crosshair.position -= Vector2(5, 12)
 	layer.add_child(crosshair)
 	message = Label.new()
 	message.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	message.position = Vector2(24, -100)
+	message.position = Vector2(24, -130)
 	layer.add_child(message)
+	image_credit = Label.new()
+	image_credit.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	image_credit.position = Vector2(24, -44)
+	image_credit.add_theme_font_size_override("font_size", 12)
+	layer.add_child(image_credit)
 	var controls := Button.new()
 	controls.text = "Controls / remap (Esc)"
 	controls.position = Vector2(1000, 20)
@@ -110,6 +118,11 @@ func _build_ui() -> void:
 	close.text = "Resume flight"
 	close.pressed.connect(_toggle_settings)
 	column.add_child(close)
+	transition = ColorRect.new()
+	transition.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	transition.color = Color(0.005, 0.008, 0.025, 0.0)
+	transition.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(transition)
 
 
 func _binding_text(action: String) -> String:
@@ -156,7 +169,7 @@ func _input(event: InputEvent) -> void:
 			pending_action = ""
 			get_viewport().set_input_as_handled()
 		return
-	if settings.visible:
+	if settings.visible or travelling:
 		return
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F2:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
@@ -166,7 +179,7 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("open"):
 		_open_selected()
 	if event.is_action_pressed("parent"):
-		_load_directory(current_path.get_base_dir())
+		_travel_to(current_path.get_base_dir())
 	if event.is_action_pressed("reset"):
 		_reset_flight()
 
@@ -177,7 +190,7 @@ func _axis(device: int, axis: JoyAxis) -> float:
 
 
 func _physics_process(delta: float) -> void:
-	if settings.visible:
+	if settings.visible or travelling:
 		return
 	var translation := Input.get_vector("left", "right", "down", "up")
 	var look := Vector2(
@@ -200,10 +213,15 @@ func _physics_process(delta: float) -> void:
 	velocity = velocity.limit_length(24.0)
 	if Input.is_action_pressed("brake"):
 		velocity = velocity.move_toward(Vector3.ZERO, 40.0 * delta)
+	var previous_position := camera.global_position
 	camera.position += velocity * delta
+	var destination := _portal_destination(previous_position, camera.global_position)
+	if not destination.is_empty():
+		_travel_to(destination)
+		return
 	_update_selection()
-	hud.text = "AEROSPACE OS · FLIGHT PROTOTYPE\n%s\nSpeed: %.1f m/s · %d items" % [current_path, velocity.length(), entries.size()]
-	message.text = "WASD: translate · Arrows: look · Space: thrust · Ctrl: brake · Q/E: roll\nEnter / Y: open · Backspace / View: parent · Home / R-stick: recenter\n%s" % status
+	hud.text = "AEROSPACE OS | %s\n%s\nSpeed: %.1f m/s | %d destinations" % [universe.region_name, current_path, velocity.length(), entries.size()]
+	message.text = "WASD: translate | Arrows: look | Space: thrust | Ctrl: brake | Q/E: roll\nFly through portals | Enter / Y: open | Backspace / View: parent | Home: recenter\n%s" % status
 
 
 func _reset_flight() -> void:
@@ -223,6 +241,8 @@ func _load_directory(path: String) -> void:
 		child.queue_free()
 	entries.clear()
 	selected = -1
+	universe.set_directory(path)
+	image_credit.text = universe.image_credit
 	var names: Array[String] = []
 	names.append_array(directory.get_directories())
 	names.append_array(directory.get_files())
@@ -234,43 +254,105 @@ func _load_directory(path: String) -> void:
 		var full_path := path.path_join(name)
 		var is_folder := directory.dir_exists(name)
 		var index := entries.size()
-		var mesh := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(2.0, 1.4, 1.0) if is_folder else Vector3(1.2, 1.5, 0.25)
-		mesh.mesh = box
-		var material := StandardMaterial3D.new()
-		material.albedo_color = Color(0.15, 0.7, 0.95) if is_folder else Color(0.65, 0.45, 0.9)
-		mesh.material_override = material
-		mesh.position = Vector3((index % 8 - 3.5) * 5, -(index / 8) * 4, -10)
-		objects.add_child(mesh)
-		var label := Label3D.new()
-		label.text = name
-		label.font_size = 36
-		label.pixel_size = 0.008
-		label.position.y = -1.4
-		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		mesh.add_child(label)
-		entries.append({"path": full_path, "folder": is_folder, "mesh": mesh})
-	status = "Aim at an item and press Enter / Y. Showing up to 120 non-hidden items."
+		var node: Node3D
+		if is_folder:
+			node = universe.make_portal(full_path)
+		else:
+			var file := MeshInstance3D.new()
+			var crystal := PrismMesh.new()
+			crystal.size = Vector3(2.4, 3.4, 1.4)
+			file.mesh = crystal
+			var material := StandardMaterial3D.new()
+			material.albedo_color = Color("b6c8f4")
+			material.metallic = 0.45
+			material.roughness = 0.3
+			material.emission_enabled = true
+			material.emission = Color("273b64")
+			file.material_override = material
+			node = file
+		# Staggered orbital shells give every destination space in all three axes.
+		if index == 0:
+			node.position = Vector3(0, 0, -38)
+		else:
+			var shell := floorf(float(index - 1) / 9.0)
+			var angle := float((index - 1) % 9) * TAU / 9.0 + shell * 0.38
+			node.position = Vector3(
+				sin(angle) * (25.0 + shell * 18.0),
+				cos(angle) * (19.0 + shell * 13.0),
+				-52.0 - shell * 29.0 + sin(angle * 2.0) * 9.0
+			)
+		objects.add_child(node)
+		_add_label(node, ("PORTAL · " if is_folder else "") + name, -5.3 if is_folder else -3.0)
+		entries.append({"path": full_path, "folder": is_folder, "mesh": node})
+	var parent := path.get_base_dir()
+	if not parent.is_empty() and parent != path:
+		var return_portal: Node3D = universe.make_portal(parent, true)
+		return_portal.position = Vector3(0, 0, 32)
+		objects.add_child(return_portal)
+		_add_label(return_portal, "RETURN · " + parent.get_file(), -5.3)
+		entries.append({"path": parent, "folder": true, "mesh": return_portal})
+	status = "Fly through a portal or aim and press Enter / Y. Up to 120 non-hidden items."
 	_reset_flight()
+
+
+func _add_label(node: Node3D, text: String, height: float) -> void:
+	var label := Label3D.new()
+	label.text = text
+	label.font_size = 48
+	label.pixel_size = 0.0008
+	label.fixed_size = true
+	label.position.y = height
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.outline_size = 10
+	label.visibility_range_end = 220.0
+	label.no_depth_test = false
+	node.add_child(label)
+
+
+func _portal_destination(previous: Vector3, current: Vector3) -> String:
+	for entry in entries:
+		if not entry.folder:
+			continue
+		var portal: Node3D = entry.mesh
+		var start := portal.to_local(previous)
+		var end := portal.to_local(current)
+		# Segment/plane intersection prevents fast flight from skipping a portal.
+		if start.z * end.z > 0.0 or is_equal_approx(start.z, end.z):
+			continue
+		var crossing := start.lerp(end, start.z / (start.z - end.z))
+		if Vector2(crossing.x, crossing.y).length() < 3.5:
+			return entry.path
+	return ""
+
+
+func _travel_to(path: String) -> void:
+	if travelling:
+		return
+	travelling = true
+	velocity = Vector3.ZERO
+	var fade := create_tween()
+	fade.tween_property(transition, "color:a", 1.0, 0.18)
+	fade.tween_callback(func(): _load_directory(path))
+	fade.tween_property(transition, "color:a", 0.0, 0.35)
+	fade.tween_callback(func(): travelling = false)
 
 
 func _update_selection() -> void:
 	selected = -1
-	var nearest := 80.0
+	var nearest := 650.0
 	for index in entries.size():
-		var mesh: MeshInstance3D = entries[index].mesh
+		var mesh: Node3D = entries[index].mesh
 		mesh.scale = Vector3.ONE
 		var offset := mesh.global_position - camera.global_position
 		var distance := offset.length()
-		if distance < nearest and (-camera.global_basis.z).dot(offset.normalized()) > 0.992:
+		if distance < nearest and (-camera.global_basis.z).dot(offset.normalized()) > cos(atan2(4.2 if entries[index].folder else 2.3, distance)):
 			selected = index
 			nearest = distance
 	if selected >= 0:
-		entries[selected].mesh.scale = Vector3.ONE * 1.2
-		status = "Open: " + str(entries[selected].path)
+		entries[selected].mesh.scale = Vector3.ONE * 1.06
+		status = ("Enter dimension: " if entries[selected].folder else "Open file: ") + str(entries[selected].path)
 	else:
-		status = "Aim at an item to select it. Enter / Y opens it."
+		status = "Fly through a folder portal or aim at a file and press Enter / Y."
 
 
 func _open_selected() -> void:
@@ -278,7 +360,7 @@ func _open_selected() -> void:
 		return
 	var entry := entries[selected]
 	if entry.folder:
-		_load_directory(entry.path)
+		_travel_to(entry.path)
 	else:
 		var result := OS.shell_open(entry.path)
 		status = "Opened: " + str(entry.path) if result == OK else "Could not open: " + str(entry.path)
